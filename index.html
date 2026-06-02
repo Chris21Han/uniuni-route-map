@@ -72,31 +72,73 @@ html, body {
 
 .legend {
     background: white;
-    padding: 10px;
+    padding: 6px;
     border-radius: 6px;
-    line-height: 1.8;
+    line-height: 1.3;
 }
 
 #filter-panel{
     position:absolute;
-    top:80px;
+    top:65px;
     left:20px;
     z-index:1000;
 
-    width:320px;
-    max-height:80vh;
+    width:220px;
+    max-height:65vh;
     overflow-y:auto;
 
-    background:white;
-    padding:12px;
-    border-radius:8px;
+    background:#ffffff;
+    padding:10px;
+    border-radius:10px;
 
-    box-shadow:0 2px 8px rgba(0,0,0,.2);
+    box-shadow:0 4px 12px rgba(0,0,0,.15);
+}
+
+#regionCards{
+
+    position:absolute;
+
+    inset:0;
+
+    pointer-events:none;
+
+    z-index:1000;
+
+}
+
+.region-card{
+
+    position:absolute;
+
+    width:160px;
+
+    background:#fafafa;
+
+    border:2px solid #ff8c00;
+
+    border-radius:6px;
+
+    padding:6px;
+
+    box-shadow:0 3px 10px rgba(0,0,0,.12);
+
+    pointer-events:auto;
+}
+
+.region-card-title{
+
+    font-weight:bold;
+
+    font-size:12px;
+
+    margin-bottom:6px;
+
+    color:#ff8c00;
 }
 
 #filter-panel label{
     display:block;
-    font-size:12px;
+    font-size:11px;
     font-weight:bold;
     margin-bottom:4px;
 }
@@ -112,15 +154,28 @@ html, body {
 }
 
 .choices__inner{
-    min-height:32px;
+    min-height:22px;
+    font-size:11px;
 }
 
 .choices__list--dropdown{
     z-index:99999;
     max-height:400px;
     overflow-y:auto;
-}
+    font-size:10px;}
 
+#routeCount,
+#hubCount{
+
+    font-size:12px;
+
+    line-height:1.2;
+
+    color:#333;
+
+    font-weight:500;
+
+}
 </style>
 </head>
 
@@ -168,15 +223,20 @@ html, body {
 
 </div>
 
+<div id="regionCards"></div>
+
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script>
 
+let hubMarkers = [];
 let hubs = [];
 let routes = [];
+let regionRoutes = [];
 
 let hubCoords = {};
 let hubRegionMap = {};
@@ -203,17 +263,24 @@ async function loadExcel(){
     const routeSheet =
         workbook.Sheets["Route_Master"];
 
+    const regionRouteSheet =
+        workbook.Sheets["Region_Route"];
+
     const hubData =
         XLSX.utils.sheet_to_json(hubSheet);
 
     const routeData =
         XLSX.utils.sheet_to_json(routeSheet);
 
+    const regionRouteData =
+        XLSX.utils.sheet_to_json(regionRouteSheet);
+
     console.log("Hub Data:",hubData);
     console.log("Route Data:",routeData);
 
     hubs = hubData;
     routes = routeData;
+    regionRoutes = regionRouteData;
 
     hubs.forEach(hub=>{
 
@@ -282,7 +349,7 @@ async function loadExcel(){
             ? "#e53935"
             : "#1976d2";
 
-        L.circleMarker(
+        const marker = L.circleMarker(
             [
                 Number(hub.Lat),
                 Number(hub.Lng)
@@ -300,10 +367,12 @@ async function loadExcel(){
             <b>${hub.Hub}</b><br>
             Region: ${hub.Region}<br>
             Level: ${hub["Hub Level"]}<br>
-            Capacity: ${hub["Daily Capacity"]}<br>
+            Daily Capacity: ${hub["Daily Capacity"]}<br>
             Address:<br>
             ${hub.Address}
         `);
+
+        hubMarkers.push(marker);
 
     });
 
@@ -358,11 +427,30 @@ async function loadExcel(){
         "label",
         true
     );
+
+    const viewMode =
+        document.getElementById(
+            "viewMode"
+        ).value;
+
+    if(viewMode === "region"){
+
+        hubMarkers.forEach(
+            marker => map.removeLayer(marker)
+        );
+
+    }else{
+
+        hubMarkers.forEach(
+            marker => map.addLayer(marker)
+        );
+
+    }
     drawRoutes();
 
 }
 
-const map = L.map('map').setView([39.5, -98.35], 4);
+const map = L.map('map').setView([35.5, -100], 4);
 
 L.tileLayer(
 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -415,15 +503,15 @@ new Choices(destinationHubFilter,{
 });
 
 const regionLabels = {
-    SEA:[48.00,-122.30],
-    BAY:[37.85,-122.55],
-    LAX:[33.85,-117.75],
-    DEN:[42.15,-111.7],
-    DFW:[31.25,-103.60],
-    ORD:[42.25,-88.70],
-    ATL:[34.10,-84.70],
+    SEA:[48.00,-120.00],
+    BAY:[38.85,-122.55],
+    LAX:[35.85,-117.75],
+    DEN:[41.15,-107.7],
+    DFW:[33.25,-99.60],
+    ORD:[40.25,-88.70],
+    ATL:[32.10,-84.70],
     MIA:[26.25,-80.10],
-    JFK:[41.05,-74.35]
+    JFK:[39.05,-74.35]
 };
 const regionLabelShown = {};
 
@@ -431,17 +519,19 @@ const regionLabelShown = {};
 Object.entries(regionLabels).forEach(([region, coords]) => {
 
     L.circleMarker(coords,{
-        radius:0,
-        opacity:0,
-        fillOpacity:0
+        radius:6,
+        color:"#444",
+        fillColor:"#444",
+        fillOpacity:1,
+        weight:2,
+        opacity:0.3
     })
     .addTo(map)
     .bindTooltip(region,{
         permanent:true,
-        direction:'right',
-        offset:[15,0],
+        direction:'center',
         className:'region-tooltip'
-    });
+    })
 
 });
 
@@ -473,11 +563,163 @@ function drawRoutes(){
     console.log("destinationHubs:", destinationHubs);
 
     const visibleHubs = new Set();
-    const regionRouteSet = new Set();
         const viewMode =
         document.getElementById(
             "viewMode"
         ).value;
+
+    
+        if(viewMode==="region"){
+            const bidirectionalSet = new Set();
+
+            const routeSet = new Set();
+            
+            regionRoutes.forEach(route=>{
+
+                const from =
+                    route["Origin Region"];
+
+                const to =
+                    route["Destination Region"];
+
+                const reverseKey =
+                    `${to}_${from}`;
+
+                const currentKey =
+                    `${from}_${to}`;
+
+                if(
+                    regionRoutes.some(r=>
+                        r["Origin Region"]===to
+                        &&
+                        r["Destination Region"]===from
+                    )
+                ){
+                    bidirectionalSet.add(currentKey);
+                    bidirectionalSet.add(reverseKey);
+                }
+
+            });
+            regionRoutes.forEach(route=>{
+
+                const fromRegion =
+                    route["Origin Region"];
+
+                const toRegion =
+                    route["Destination Region"];
+
+                const passFilter =
+
+                    (
+                        originRegions.length===0
+                        ||
+                        originRegions.includes(fromRegion)
+                    )
+
+                    &&
+
+                    (
+                        destinationRegions.length===0
+                        ||
+                        destinationRegions.includes(toRegion)
+                    );
+
+                if(!passFilter){
+                    return;
+                }
+
+                const routeKey =
+                    `${fromRegion}_${toRegion}`;
+
+                if(routeSet.has(routeKey)){
+                    return;
+                }
+
+                routeSet.add(routeKey);
+
+                const from =
+                    regionLabels[fromRegion];
+
+                const to =
+                    regionLabels[toRegion];
+
+                if(!from || !to){
+                    return;
+                }
+
+                const isBidirectional =
+                    bidirectionalSet.has(routeKey);
+
+                const line = L.polyline(
+                    [from,to],
+                    {
+                        color:
+                            isBidirectional
+                            ? "#1976d2"
+                            : "#e53935",
+
+                        weight:
+                            isBidirectional
+                            ? 3
+                            : 3,
+
+                        opacity:0.8
+                    }
+                )
+                .bindTooltip(
+
+                    isBidirectional
+
+                    ? `${fromRegion} ↔ ${toRegion}`
+
+                    : `${fromRegion} → ${toRegion}`
+
+                )
+                .addTo(map);
+
+                routeLayers.push(line);
+
+                if(!isBidirectional){
+
+                    const arrow = L.polylineDecorator(
+                        line,
+                        {
+                            patterns:[
+                                {
+                                    offset:'50%',
+                                    repeat:0,
+                                    symbol:L.Symbol.arrowHead({
+                                        pixelSize:12,
+                                        polygon:true,
+                                        pathOptions:{
+                                            color:'#e53935',
+                                            fillOpacity:1,
+                                            weight:2
+                                        }
+                                    })
+                                }
+                            ]
+                        }
+                    ).addTo(map);
+
+                    routeLayers.push(arrow);
+
+                }
+                }); 
+
+            document.getElementById(
+                "routeCount"
+            ).innerHTML =
+                `${routeLayers.length} Routes`;
+
+            document.getElementById(
+                "hubCount"
+            ).innerHTML =
+                `${Object.keys(regionLabels).length} Regions`;
+
+            updateLegend();
+            return;
+        }
 
     console.log(
         "viewMode:",
@@ -532,34 +774,15 @@ function drawRoutes(){
                 destinationHubs.includes(toHub)
             );
 
-        if(passFilter){
-            if(viewMode==="region"){
-
-                const key =
-                    fromRegion + "_" + toRegion;
-
-                if(regionRouteSet.has(key)){
-                    return;
-                }
-
-                regionRouteSet.add(key);
-
-            }
+        if(!passFilter){
+            return;
+        }
 
             let from;
             let to;
 
-            if(viewMode==="region"){
-
-                from = regionCoords[fromRegion];
-                to = regionCoords[toRegion];
-
-            }else{
-
-                from = hubCoords[fromHub];
-                to = hubCoords[toHub];
-
-            }
+            from = hubCoords[fromHub];
+            to = hubCoords[toHub];
 
             if(!from || !to){
 
@@ -604,19 +827,9 @@ function drawRoutes(){
 
             routeLayers.push(line);
 
-            if(viewMode==="region"){
+            visibleHubs.add(fromHub);
+            visibleHubs.add(toHub);
 
-                visibleHubs.add(fromRegion);
-                visibleHubs.add(toRegion);
-
-            }else{
-
-                visibleHubs.add(fromHub);
-                visibleHubs.add(toHub);
-
-            }
-
-        }
 
     });
 
@@ -629,6 +842,8 @@ function drawRoutes(){
         "hubCount"
     ).innerHTML =
         `${visibleHubs.size} Hubs`;
+
+    updateLegend();
 
 }
 
@@ -677,33 +892,268 @@ document
 .getElementById("viewMode")
 .addEventListener(
     "change",
-    drawRoutes
+    function(){
+
+        const mode =
+            document.getElementById(
+                "viewMode"
+            ).value;
+
+        if(mode==="region"){
+
+            hubMarkers.forEach(
+                marker =>
+                map.removeLayer(marker)
+            );
+            renderRegionCards();
+
+        }else{
+
+            hubMarkers.forEach(
+                marker =>
+                marker.addTo(map)
+            );
+            document.getElementById(
+                "regionCards"
+            ).innerHTML = "";
+
+        }
+
+        drawRoutes();
+
+    }
 );
 
 const legend = L.control({position:'bottomright'});
 
-legend.onAdd = function() {
+legend.onAdd = function(){
 
-const div = L.DomUtil.create('div','legend');
+    const div =
+        L.DomUtil.create('div','legend');
 
-div.innerHTML = `
-<b>Legend</b><br>
-🔴 Level 1 Hub<br>
-🔵 Level 2 Hub<br>
-<br>
-Node Size: Fixed
-`;
+    div.id = "legendBox";
 
-return div;
+    return div;
+
 };
 
 legend.addTo(map);
+
+const cardPositions = {
+
+    SEA:{
+        top:"430px",
+        left:"260px"
+    },
+
+    BAY:{
+        bottom:"20px",
+        left:"260px"
+    },
+
+    LAX:{
+        bottom:"20px",
+        left:"450px"
+    },
+
+    ORD:{
+        top:"40px",
+        right:"20px"
+    },
+
+    JFK:{
+        top:"170px",
+        right:"20px"
+    },
+
+    ATL:{
+        top:"450px",
+        right:"20px"
+    },
+
+    DEN:{
+        bottom:"20px",
+        left:"640px"
+    },
+
+    DFW:{
+        bottom:"20px",
+        left:"830px"
+    },
+
+    MIA:{
+        bottom:"20px",
+        left:"1020px"
+    }
+
+};
+
+function renderRegionCards(){
+
+    const container =
+        document.getElementById(
+            "regionCards"
+        );
+
+    container.innerHTML = "";
+
+    const regionGroups = {};
+
+    hubs.forEach(hub=>{
+
+        if(!regionGroups[hub.Region]){
+
+            regionGroups[hub.Region] = [];
+
+        }
+
+        regionGroups[hub.Region].push(hub);
+
+    });
+
+    Object.entries(regionGroups)
+    .forEach(([region, regionHubs])=>{
+
+        const card =
+            document.createElement("div");
+
+        card.className =
+            "region-card";
+
+        const pos =
+            cardPositions[region];
+
+        if(pos){
+
+            Object.assign(
+                card.style,
+                pos
+            );
+
+}
+
+        let hubHtml = "";
+
+        regionHubs.forEach(hub=>{
+
+            hubHtml += `
+
+            <div style="
+                margin-bottom:8px;
+                padding-bottom:8px;
+                border-bottom:1px solid #eee;
+                font-size:12px;
+            ">
+
+                <div style="
+                    font-weight:bold;
+                    font-size:11px;
+                    color:#222;
+                    margin-bottom:2px;
+                ">
+                    ${hub.Hub}
+                    <span style="
+                        color:#ff7a00;
+                        margin-left:3px;
+                        font-size:10px;
+                    ">
+                        L${hub["Hub Level"]}
+                    </span>
+                </div>
+
+                <div>
+                    Daily:
+                    ${Number(
+                        hub["Daily Capacity"]
+                    ).toLocaleString()}
+                </div>
+
+                <div>
+                    Max:
+                    ${Number(
+                        hub["Current Maximum Capacity"]
+                    ).toLocaleString()}
+                </div>
+
+                <div style="
+                    margin-top:3px;
+                    font-size:10px;
+                    color:#666;
+                    line-height:1.2;
+                ">
+                    ${hub["Sorting Mode"]}
+                </div>
+
+            </div>
+
+            `;
+
+        });
+
+        card.innerHTML = `
+
+            <div class="region-card-title">
+                ${region}
+            </div>
+
+            ${hubHtml}
+
+        `;
+
+        container.appendChild(card);
+
+    });
+
+}
+
+function updateLegend(){
+
+    const mode =
+        document.getElementById(
+            "viewMode"
+        ).value;
+
+    const legendBox =
+        document.getElementById(
+            "legendBox"
+        );
+
+    if(!legendBox) return;
+
+    if(mode === "region"){
+
+        legendBox.innerHTML = `
+            <b>Route Type</b><br>
+
+            <span style="color:#e53935;font-size:20px;">━</span>
+            Single Direction
+            <br>
+
+            <span style="color:#1976d2;font-size:20px;">━</span>
+            Bidirectional
+        `;
+
+    }else{
+
+        legendBox.innerHTML = `
+            <b>Legend</b><br>
+
+            🔴 Level 1 Hub<br>
+            🔵 Level 2 Hub<br>
+            <br>
+            Node Size: Fixed
+        `;
+
+    }
+
+}
 
 loadExcel();
 console.log("hubs loaded:", hubs.length);
 console.log("routes loaded:", routes.length);
 
 drawRoutes();
+updateLegend();
 
 </script>
 
